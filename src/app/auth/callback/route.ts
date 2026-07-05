@@ -1,64 +1,61 @@
 import { NextResponse } from "next/server";
+import type { EmailOtpType } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 /**
- * OAuth callback for Supabase Google sign-in.
- * Exchanges the ?code for a session, stores Google Calendar tokens (best-effort),
- * then routes the user to onboarding or the tracker.
+ * Auth callback. Handles BOTH:
+ *  - magic-link / email OTP  (?token_hash=..&type=..)
+ *  - PKCE code exchange       (?code=..)  — used by OAuth, if ever re-enabled
+ * Then routes the user to onboarding or the tracker.
  */
 export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url);
   const code = searchParams.get("code");
-
-  if (!code) {
-    return NextResponse.redirect(new URL("/login?error=auth", origin));
-  }
+  const tokenHash = searchParams.get("token_hash");
+  const type = searchParams.get("type") as EmailOtpType | null;
 
   const supabase = await createClient();
-  const { data, error } = await supabase.auth.exchangeCodeForSession(code);
 
-  if (error || !data.session) {
-    return NextResponse.redirect(new URL("/login?error=auth", origin));
-  }
+  // ── Establish the session from whichever param we got ──────────────
+  let session = null;
+  if (tokenHash && type) {
+    const { data, error } = await supabase.auth.verifyOtp({ type, token_hash: tokenHash });
+    if (!error) session = data.session;
+  } else if (code) {
+    const { data, error } = await supabase.auth.exchangeCodeForSession(code);
+    if (!error) session = data.session;
 
-  const userId = data.session.user.id;
-  const providerToken = data.session.provider_token;
-  const providerRefreshToken = data.session.provider_refresh_token;
-
-  // Best-effort: persist Google Calendar tokens so we can read busy hints later.
-  // Only store when we got a refresh token (otherwise we can't keep access alive).
-  if (providerToken && providerRefreshToken) {
-    try {
-      const admin = createAdminClient();
-
-      await admin.from("provider_tokens").upsert(
-        {
-          user_id: userId,
-          provider: "google_calendar",
-          access_token: providerToken,
-          refresh_token: providerRefreshToken,
-          expires_at: new Date(Date.now() + 3500 * 1000).toISOString(),
-          scope: "calendar.readonly",
-        },
-        { onConflict: "user_id,provider" }
-      );
-
-      await admin.from("connections").upsert(
-        {
-          user_id: userId,
-          provider: "google_calendar",
-          connected: true,
-          last_synced: new Date().toISOString(),
-        },
-        { onConflict: "user_id,provider" }
-      );
-    } catch {
-      // Never block login if token storage fails — calendar can be reconnected later.
+    // OAuth only: persist Google Calendar tokens if the provider returned them.
+    if (session?.provider_token && session.provider_refresh_token) {
+      try {
+        const admin = createAdminClient();
+        await admin.from("provider_tokens").upsert(
+          {
+            user_id: session.user.id,
+            provider: "google_calendar",
+            access_token: session.provider_token,
+            refresh_token: session.provider_refresh_token,
+            expires_at: new Date(Date.now() + 3500 * 1000).toISOString(),
+            scope: "calendar.readonly",
+          },
+          { onConflict: "user_id,provider" }
+        );
+        await admin.from("connections").upsert(
+          { user_id: session.user.id, provider: "google_calendar", connected: true, last_synced: new Date().toISOString() },
+          { onConflict: "user_id,provider" }
+        );
+      } catch {
+        // never block login if token storage fails
+      }
     }
   }
 
-  // Decide where to send the user based on onboarding status.
+  if (!session) {
+    return NextResponse.redirect(new URL("/login?error=auth", origin));
+  }
+
+  // ── Route by onboarding status ─────────────────────────────────────
   let onboarded = false;
   try {
     const { data: profile } = await supabase
@@ -70,6 +67,5 @@ export async function GET(request: Request) {
     onboarded = false;
   }
 
-  const destination = onboarded ? "/tracker" : "/onboarding";
-  return NextResponse.redirect(new URL(destination, origin));
+  return NextResponse.redirect(new URL(onboarded ? "/tracker" : "/onboarding", origin));
 }

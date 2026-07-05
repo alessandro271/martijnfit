@@ -5,9 +5,7 @@ import type { DeviceConnection } from "@/lib/types";
  * activities); Google Calendar drives the planner (read-only). Everything else
  * is "Coming soon".
  */
-export function defaultConnections(today: Date): DeviceConnection[] {
-  const thisMorning = new Date(today.getTime() - 5 * 60 * 60 * 1000).toISOString();
-
+export function defaultConnections(_today: Date): DeviceConnection[] {
   return [
     {
       id: "strava",
@@ -20,11 +18,10 @@ export function defaultConnections(today: Date): DeviceConnection[] {
     {
       id: "google_calendar",
       name: "Google Calendar",
-      active: true,
-      connected: true,
-      comingSoon: false,
-      lastSynced: thisMorning,
-      note: "Read-only — used to plan around your meetings.",
+      active: false,
+      connected: false,
+      comingSoon: true,
+      note: "Plan around your meetings — coming soon.",
     },
     { id: "apple_watch", name: "Apple Watch", active: false, connected: false, comingSoon: true },
     { id: "whoop", name: "WHOOP", active: false, connected: false, comingSoon: true },

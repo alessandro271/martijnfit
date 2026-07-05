@@ -14,8 +14,8 @@ Built for athletes who do a bit of everything: ⚽ football · 🎾 tennis · pa
 ## Stack
 
 - **Next.js 16** (App Router, React 19, Turbopack) + TypeScript + Tailwind 4
-- **Supabase** — Postgres + Auth (Google) + Row-Level Security
-- **Strava API** — activity sync · **Google Calendar API** — busy-aware planning
+- **Supabase** — Postgres + Auth (email magic-link) + Row-Level Security
+- **Strava API** — activity sync · **Google Calendar** — busy-aware planning (optional add-on)
 - **Anthropic Claude** (Sonnet) — the in-app coach with tool use
 
 > Runs in **demo mode** out of the box (mock data, no accounts needed): `npm install && npm run dev`.
